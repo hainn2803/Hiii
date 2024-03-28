@@ -304,8 +304,8 @@ def one_dimensional_Wasserstein_interpolate(X, Y, num_projections, theta, p, dev
         M = Y.shape[0]
         assert N < M, "number of samples in X must be less than number of samples in Y"
         # theta has shape (num_projection, dim)
-        X_prod = torch.matmul(X, theta.transpose(0, 1))  # (num_x, num_projections)
-        Y_prod = torch.matmul(Y, theta.transpose(0, 1))  # (num_y, num_projections)
+        X_prod = torch.matmul(X, theta.transpose(0, 1))  # (N, num_projections)
+        Y_prod = torch.matmul(Y, theta.transpose(0, 1))  # (M, num_projections)
         X_prod = X_prod.view(X_prod.shape[0], -1)
         Y_prod = Y_prod.view(Y_prod.shape[0], -1)
         sorted_X_prod = torch.sort(X_prod, dim=0)[0]
