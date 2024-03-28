@@ -291,7 +291,7 @@ def sliced_wasserstein_distance(sources_samples,
         projections = theta
         num_projections = theta.shape[0]
 
-    return torch.sum(one_dimensional_Wasserstein_interpolate(Y=sources_samples.float(), X=target_samples.float(),
+    return torch.mean(one_dimensional_Wasserstein_interpolate(Y=sources_samples.float(), X=target_samples.float(),
                                                    num_projections=num_projections,
                                                    theta=projections.float(), p=p, device=device))
 
