@@ -316,8 +316,9 @@ def one_dimensional_Wasserstein_interpolate(X, Y, num_projections, theta, p, dev
         quant_x_new = torch.linspace(0, 1, M + 2)[1:-1].unsqueeze(0).repeat(num_projections, 1).to(
             device)  # shape = (num_projections, M)
         # print(quant_x_old.shape, quant_x_new.shape, torch.transpose(sorted_X_prod, 0, 1).shape)
-        interp_x = interp1d(quant_x_old, torch.transpose(sorted_X_prod, 0, 1), quant_x_new)
-        interp_x = interp_x.view(num_projections, -1)  # shape = (num_projections, M)
+        # interp_x = interp1d(quant_x_old, torch.transpose(sorted_X_prod, 0, 1), quant_x_new)
+
+        interp_x = F.interpolate(input=torch.transpose(sorted_X_prod, 0, 1).unsqueeze(0), size=M, mode='linear')
 
         x_sorted_interpolated = torch.transpose(interp_x, 0, 1)  # shape = (M, num_projections)
 
