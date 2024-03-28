@@ -209,6 +209,8 @@ class CustomCLIP(nn.Module):
         self.eps = 0.1
         self.max_iter = 100
 
+        # self.projection_matrix = rand_projections(dim=1024, num_projections=10000, device=self.device)
+
         # self.text_feature_embed = nn.Sequential(nn.Linear(1024, 256),
         #                                         nn.ReLU(),
         #                                         nn.Linear(256, 256))
@@ -252,16 +254,18 @@ class CustomCLIP(nn.Module):
         num_classes = text_features.shape[0]
         ot_distance = torch.zeros(num_samples, num_classes).to(self.device)
 
-        NUM_PROJECTION = 2000
+        NUM_PROJECTION = 1000
 
         if theta is None:
             theta = rand_projections(dim=feat_dim, num_projections=NUM_PROJECTION, device=self.device)
+        else:
+            NUM_PROJECTION = theta.shape[0]
 
         for i in range(num_samples):
             for j in range(num_classes):
 
-                x = image_features[i, :, :]
-                y = text_features[j, :, :]
+                x = image_features[i, :, :].to(self.device)
+                y = text_features[j, :, :].to(self.device)
                 ot_distance[i, j] = sliced_wasserstein_distance(sources_samples=x,
                                                                 target_samples=y,
                                                                 num_projections=NUM_PROJECTION,
