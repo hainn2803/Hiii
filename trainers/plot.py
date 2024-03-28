@@ -367,6 +367,7 @@ class PLOT(TrainerX):
 
         output = self.model(image)
         print(torch.sum(output))
+        print(output)
         loss = F.cross_entropy(-output, label)
         self.model_backward_and_update(loss)
 

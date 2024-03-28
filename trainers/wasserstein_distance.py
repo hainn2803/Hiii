@@ -311,17 +311,17 @@ def one_dimensional_Wasserstein_interpolate(X, Y, num_projections, theta, p, dev
         sorted_X_prod = torch.sort(X_prod, dim=0)[0]
         # sorted_Y_prod = torch.sort(Y_prod, dim=0)[0]
 
-        quant_x_old = torch.linspace(0, 1, N + 2)[1:-1].unsqueeze(0).repeat(num_projections, 1).to(
-            device)  # shape = (num_projections, N)
-        quant_x_new = torch.linspace(0, 1, M + 2)[1:-1].unsqueeze(0).repeat(num_projections, 1).to(
-            device)  # shape = (num_projections, M)
+        # quant_x_old = torch.linspace(0, 1, N + 2)[1:-1].unsqueeze(0).repeat(num_projections, 1).to(
+        #     device)  # shape = (num_projections, N)
+        # quant_x_new = torch.linspace(0, 1, M + 2)[1:-1].unsqueeze(0).repeat(num_projections, 1).to(
+        #     device)  # shape = (num_projections, M)
         # print(quant_x_old.shape, quant_x_new.shape, torch.transpose(sorted_X_prod, 0, 1).shape)
 
-        interp_x = interp1d(quant_x_old, torch.transpose(sorted_X_prod, 0, 1), quant_x_new)
+        # interp_x = interp1d(quant_x_old, torch.transpose(sorted_X_prod, 0, 1), quant_x_new)
 
-        # transposed_sorted_X_prod = torch.transpose(sorted_X_prod, 0, 1).unsqueeze(0) # (1, num_projections, N)
-        # interp_x = F.interpolate(input=transposed_sorted_X_prod, size=M, mode='linear') # (1, num_projections, M)
-        # interp_x = interp_x.squeeze(0)  # (num_projections, M)
+        transposed_sorted_X_prod = torch.transpose(sorted_X_prod, 0, 1).unsqueeze(0) # (1, num_projections, N)
+        interp_x = F.interpolate(input=transposed_sorted_X_prod, size=M, mode='linear') # (1, num_projections, M)
+        interp_x = interp_x.squeeze(0)  # (num_projections, M)
 
         x_sorted_interpolated = torch.transpose(interp_x, 0, 1)  # shape = (M, num_projections)
 
