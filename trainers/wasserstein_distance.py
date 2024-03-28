@@ -3,7 +3,7 @@ import torch
 import ot
 from torch.nn.functional import pad
 import torch.nn.functional as F
-from torchinterp1d.torchinterp1d import Interp1d, interp1d
+from torchinterp1d import Interp1d, interp1d
 
 
 def quantile_function(qs, cws, xs):
