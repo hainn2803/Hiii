@@ -3,7 +3,7 @@ import torch
 import ot
 from torch.nn.functional import pad
 import torch.nn.functional as F
-from torchinterp1d import Interp1d, interp1d
+from torchinterp1d.torchinterp1d import Interp1d, interp1d
 
 
 def quantile_function(qs, cws, xs):
@@ -318,7 +318,7 @@ def one_dimensional_Wasserstein_interpolate(X, Y, num_projections, theta, p, dev
         # print(quant_x_old.shape, quant_x_new.shape, torch.transpose(sorted_X_prod, 0, 1).shape)
 
         # interp_x = interp1d(quant_x_old, torch.transpose(sorted_X_prod, 0, 1), quant_x_new)
-        
+
         transposed_sorted_X_prod = torch.transpose(sorted_X_prod, 0, 1).unsqueeze(0) # (1, num_projections, N)
         interp_x = F.interpolate(input=transposed_sorted_X_prod, size=M, mode='linear') # (1, num_projections, M)
         interp_x = interp_x.squeeze(0)  # (num_projections, M)
