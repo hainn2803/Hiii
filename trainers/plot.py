@@ -209,17 +209,34 @@ class CustomCLIP(nn.Module):
         self.eps = 0.1
         self.max_iter = 100
 
-        # self.projection_matrix = rand_projections(dim=1024, num_projections=10000, device=self.device)
-
-        # self.text_feature_embed = nn.Sequential(nn.Linear(1024, 256),
-        #                                         nn.ReLU(),
-        #                                         nn.Linear(256, 256))
-        #
-        # self.visual_feature_embed = nn.Sequential(nn.Linear(1024, 256),
-        #                                           nn.ReLU(),
-        #                                           nn.Linear(256, 256))
-
     def formulate_OT_cosine_distance(self, image_features, text_features):
+        image_features = F.normalize(image_features, dim=2)
+        text_features = F.normalize(text_features, dim=2)
+        M = image_features.shape[0]
+        b = image_features.shape[1]
+
+        sim = torch.einsum('mbd,ncd->mnbc', image_features, text_features).contiguous()
+
+        sim = sim.view(M, self.N, b * self.n_cls)
+        sim = sim.permute(2, 0, 1)
+        wdist = 1.0 - sim
+
+        p = torch.zeros(b * self.n_cls, M, dtype=wdist.dtype, device=wdist.device).fill_(1. / M)
+        q = torch.zeros(b * self.n_cls, self.N, dtype=wdist.dtype, device=wdist.device).fill_(1. / self.N)
+        sinkhorn_solver = SinkhornAlgorithm(epsilon=self.eps, iterations=self.max_iter)
+        with torch.no_grad():
+            T = sinkhorn_solver(p, q, wdist)
+
+        sim_op = torch.sum(T * wdist, dim=(1, 2))  # change here
+        sim_op = sim_op.contiguous().view(b, self.n_cls)
+
+        ot_distance = self.logit_scale.exp() * sim_op
+
+        return ot_distance
+
+    def formulate_OT_Unbalanced_distance(self, image_features, text_features):
+        image_features = F.normalize(image_features, dim=2)
+        text_features = F.normalize(text_features, dim=2)
         M = image_features.shape[0]
         b = image_features.shape[1]
 
@@ -298,7 +315,8 @@ class CustomCLIP(nn.Module):
         # text_features.shape == [4, 102, 1024]
         # print(image_features.shape, text_features.shape)
 
-        return self.formulate_OT_Wasserstein_distance(image_features=image_features.float(), text_features=text_features.float())
+        return self.formulate_OT_cosine_distance(image_features=image_features.float(),
+                                                 text_features=text_features.float())
 
 
 @TRAINER_REGISTRY.register()
@@ -306,7 +324,6 @@ class PLOT(TrainerX):
     """
     It is based on CoOp.
     """
-
     def check_cfg(self, cfg):
         assert cfg.TRAINER.PLOT.PREC in ["fp16", "fp32", "amp"]
 
@@ -350,15 +367,12 @@ class PLOT(TrainerX):
         self.sched_prompt = build_lr_scheduler(self.optim_prompt, cfg.OPTIM)
         self.register_model("prompt_learner", self.model.prompt_learner, self.optim_prompt, self.sched_prompt)
 
-        # self.optim_text = build_optimizer(self.model.text_feature_embed, cfg.OPTIM)
-        # self.sched_text = build_lr_scheduler(self.optim_text, cfg.OPTIM)
-        # self.register_model("text_feature_learner", self.model.text_feature_embed, self.optim_text, self.sched_text)
-        #
-        # self.optim_visual = build_optimizer(self.model.visual_feature_embed, cfg.OPTIM)
-        # self.sched_visual = build_lr_scheduler(self.optim_visual, cfg.OPTIM)
-        # self.register_model("visual_feature_learner", self.model.visual_feature_embed, self.optim_visual, self.sched_visual)
-
         self.scaler = GradScaler() if cfg.TRAINER.PLOT.PREC == "amp" else None
+
+        self.prototypes = dict()
+
+    def update_prototypes(self, image, label):
+
 
     def forward_backward(self, batch):
         image, label = self.parse_batch_train(batch)
@@ -366,16 +380,8 @@ class PLOT(TrainerX):
         # image.shape == [32, 3, 224, 224]
 
         output = self.model(image)
-        print(torch.sum(output))
-        print(output)
         loss = F.cross_entropy(-output, label)
         self.model_backward_and_update(loss)
-
-        pred_1 = torch.argmax(-output, dim=1)
-        print(f"Acc max: {torch.sum(pred_1 == label) / len(pred_1)}")
-
-        pred_2 = torch.argmin(-output, dim=1)
-        print(f"Acc min: {torch.sum(pred_2 == label) / len(pred_2)}")
 
         loss_summary = {
             "loss": loss.item(),
