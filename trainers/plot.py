@@ -235,27 +235,37 @@ class CustomCLIP(nn.Module):
         return ot_distance
 
     def formulate_OT_Unbalanced_distance(self, image_features, text_features):
+
         image_features = F.normalize(image_features, dim=2)
         text_features = F.normalize(text_features, dim=2)
-        M = image_features.shape[0]
-        b = image_features.shape[1]
 
-        sim = torch.einsum('mbd,ncd->mnbc', image_features, text_features).contiguous()
+        image_features = image_features.permute(1, 0, 2)  # image_features.shape == [32, 49, 1024]
+        text_features = text_features.permute(1, 0, 2)  # text_features.shape == [102, 4, 1024]
 
-        sim = sim.view(M, self.N, b * self.n_cls)
-        sim = sim.permute(2, 0, 1)
-        wdist = 1.0 - sim
+        batch_size, num_sources = image_features.shape[0], image_features.shape[1]
+        num_classes, num_targets = text_features.shape[0], text_features.shape[1]
 
-        p = torch.zeros(b * self.n_cls, M, dtype=wdist.dtype, device=wdist.device).fill_(1. / M)
-        q = torch.zeros(b * self.n_cls, self.N, dtype=wdist.dtype, device=wdist.device).fill_(1. / self.N)
-        sinkhorn_solver = SinkhornAlgorithm(epsilon=self.eps, iterations=self.max_iter)
+        reg = 0.01
+        ot_distance = torch.zeros(batch_size, num_classes).to(self.device)
+
         with torch.no_grad():
-            T = sinkhorn_solver(p, q, wdist)
+            for i in range(batch_size):
+                for j in range(num_classes):
 
-        sim_op = torch.sum(T * wdist, dim=(1, 2))  # change here
-        sim_op = sim_op.contiguous().view(b, self.n_cls)
+                    a = torch.ones(num_sources).to(self.device)
+                    b = torch.ones(num_targets).to(self.device)
+                    a = a / a.sum()
+                    b = b / b.sum()
 
-        ot_distance = self.logit_scale.exp() * sim_op
+                    inner_dist = 1 - torch.matmul(image_features[i, :], torch.transpose(text_features[j, :], 0, 1))
+
+                    reg_kl = (float("inf"), 0.01)
+                    T_opt = ot.unbalanced.sinkhorn_unbalanced(a=a.float(), b=b.float(), reg=reg, reg_m=reg_kl,
+                                                          M=inner_dist.float(), numItermax=10000, method="sinkhorn_stabilized")
+
+                    ot_distance[i, j] = torch.sum(inner_dist * T_opt)
+
+        ot_distance = self.logit_scale.exp() * ot_distance
 
         return ot_distance
 
@@ -309,14 +319,11 @@ class CustomCLIP(nn.Module):
         text_features = self.text_encoder(prompts, tokenized_prompts)
         text_features = text_features.contiguous().view(self.N, self.n_cls, self.d)
 
-        # image_features = F.normalize(image_features, dim=2)
-        # text_features = F.normalize(text_features, dim=2)
         # image_features.shape == [49, 32, 1024]
         # text_features.shape == [4, 102, 1024]
         # print(image_features.shape, text_features.shape)
 
-        return self.formulate_OT_cosine_distance(image_features=image_features.float(),
-                                                 text_features=text_features.float())
+        return self.formulate_OT_Unbalanced_distance(image_features=image_features.float(), text_features=text_features.float())
 
 
 @TRAINER_REGISTRY.register()
