@@ -248,22 +248,22 @@ class CustomCLIP(nn.Module):
         reg = 0.01
         ot_distance = torch.zeros(batch_size, num_classes).to(self.device)
 
-        with torch.no_grad():
-            for i in range(batch_size):
-                for j in range(num_classes):
+        for i in range(batch_size):
+            for j in range(num_classes):
 
-                    a = torch.ones(num_sources).to(self.device)
-                    b = torch.ones(num_targets).to(self.device)
-                    a = a / a.sum()
-                    b = b / b.sum()
+                a = torch.ones(num_sources).to(self.device)
+                b = torch.ones(num_targets).to(self.device)
+                a = a / a.sum()
+                b = b / b.sum()
 
-                    inner_dist = 1 - torch.matmul(image_features[i, :], torch.transpose(text_features[j, :], 0, 1))
+                inner_dist = 1 - torch.matmul(image_features[i, :], torch.transpose(text_features[j, :], 0, 1))
 
-                    reg_kl = (float("inf"), 0.01)
+                reg_kl = (float("inf"), 0.01)
+                with torch.no_grad():
                     T_opt = ot.unbalanced.sinkhorn_unbalanced(a=a.float(), b=b.float(), reg=reg, reg_m=reg_kl,
                                                           M=inner_dist.float(), numItermax=10000, method="sinkhorn_stabilized")
 
-                    ot_distance[i, j] = torch.sum(inner_dist * T_opt)
+                ot_distance[i, j] = torch.sum(inner_dist * T_opt)
 
         ot_distance = self.logit_scale.exp() * ot_distance
 
