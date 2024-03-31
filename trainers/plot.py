@@ -378,8 +378,8 @@ class PLOT(TrainerX):
 
         self.prototypes = dict()
 
-    def update_prototypes(self, image, label):
-
+    # def update_prototypes(self, image, label):
+    #     pass
 
     def forward_backward(self, batch):
         image, label = self.parse_batch_train(batch)
