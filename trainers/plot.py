@@ -266,7 +266,7 @@ class CustomCLIP(nn.Module):
                                                               M=inner_dist.float(),
                                                               numItermax=10000,
                                                               method="sinkhorn_stabilized")
-                    print(torch.sum(T_opt))
+
                 ot_distance[i, j] = torch.sum(inner_dist * T_opt)
 
         ot_distance = self.logit_scale.exp() * ot_distance
