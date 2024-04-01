@@ -245,7 +245,7 @@ class CustomCLIP(nn.Module):
         batch_size, num_sources = image_features.shape[0], image_features.shape[1]
         num_classes, num_targets = text_features.shape[0], text_features.shape[1]
 
-        reg = 0.001
+        reg = 0.01
         ot_distance = torch.zeros(batch_size, num_classes).to(self.device)
 
         for i in range(batch_size):
