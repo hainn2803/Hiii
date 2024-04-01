@@ -245,12 +245,11 @@ class CustomCLIP(nn.Module):
         batch_size, num_sources = image_features.shape[0], image_features.shape[1]
         num_classes, num_targets = text_features.shape[0], text_features.shape[1]
 
-        reg = 0.01
+        reg = 0.001
         ot_distance = torch.zeros(batch_size, num_classes).to(self.device)
 
         for i in range(batch_size):
             for j in range(num_classes):
-
                 a = torch.ones(num_sources).to(self.device)
                 b = torch.ones(num_targets).to(self.device)
                 a = a / a.sum()
@@ -258,10 +257,15 @@ class CustomCLIP(nn.Module):
 
                 inner_dist = 1 - torch.matmul(image_features[i, :], torch.transpose(text_features[j, :], 0, 1))
 
-                reg_kl = (float("inf"), 0.01)
+                reg_kl = (float("inf"), 0.1)
                 with torch.no_grad():
-                    T_opt = ot.unbalanced.sinkhorn_unbalanced(a=a.float(), b=b.float(), reg=reg, reg_m=reg_kl,
-                                                          M=inner_dist.float(), numItermax=10000, method="sinkhorn_stabilized")
+                    T_opt = ot.unbalanced.sinkhorn_unbalanced(a=a.float(),
+                                                              b=b.float(),
+                                                              reg=reg,
+                                                              reg_m=reg_kl,
+                                                              M=inner_dist.float(),
+                                                              numItermax=10000,
+                                                              method="sinkhorn_stabilized")
 
                 ot_distance[i, j] = torch.sum(inner_dist * T_opt)
 
@@ -290,7 +294,6 @@ class CustomCLIP(nn.Module):
 
         for i in range(num_samples):
             for j in range(num_classes):
-
                 x = image_features[i, :, :].to(self.device)
                 y = text_features[j, :, :].to(self.device)
                 ot_distance[i, j] = sliced_wasserstein_distance(sources_samples=x,
@@ -323,7 +326,8 @@ class CustomCLIP(nn.Module):
         # text_features.shape == [4, 102, 1024]
         # print(image_features.shape, text_features.shape)
 
-        return self.formulate_OT_Unbalanced_distance(image_features=image_features.float(), text_features=text_features.float())
+        return self.formulate_OT_Unbalanced_distance(image_features=image_features.float(),
+                                                     text_features=text_features.float())
 
 
 @TRAINER_REGISTRY.register()
@@ -331,6 +335,7 @@ class PLOT(TrainerX):
     """
     It is based on CoOp.
     """
+
     def check_cfg(self, cfg):
         assert cfg.TRAINER.PLOT.PREC in ["fp16", "fp32", "amp"]
 
