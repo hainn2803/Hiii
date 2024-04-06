@@ -209,9 +209,6 @@ class CustomCLIP(nn.Module):
         self.eps = 0.1
         self.max_iter = 100
 
-        self.maha_dist = nn.Parameter(torch.empty(1024, 1024))
-        nn.init.xavier_uniform_(self.maha_dist)
-
     def formulate_OT_cosine_distance(self, image_features, text_features):
         image_features = F.normalize(image_features, dim=2)
         text_features = F.normalize(text_features, dim=2)
@@ -358,7 +355,7 @@ class PLOT(TrainerX):
 
         print("Turning off gradients in both the image and the text encoder")
         for name, param in self.model.named_parameters():
-            if "prompt_learner" not in name and "maha_dist" not in name:
+            if "prompt_learner" not in name:
                 # print(f"Not require grad: {name}")
                 param.requires_grad_(False)
             # else:
@@ -381,12 +378,6 @@ class PLOT(TrainerX):
         self.optim_prompt = build_optimizer(self.model.prompt_learner, cfg.OPTIM)
         self.sched_prompt = build_lr_scheduler(self.optim_prompt, cfg.OPTIM)
         self.register_model("prompt_learner", self.model.prompt_learner, self.optim_prompt, self.sched_prompt)
-
-        # self.scaler = GradScaler() if cfg.TRAINER.PLOT.PREC == "amp" else None
-
-        self.optim_maha = build_optimizer(self.model.maha_dist, cfg.OPTIM)
-        self.sched_maha = build_lr_scheduler(self.optim_maha, cfg.OPTIM)
-        self.register_model("mahalanobis", self.model.maha_dist, self.optim_maha, self.sched_maha)
 
         self.scaler = GradScaler() if cfg.TRAINER.PLOT.PREC == "amp" else None
 
