@@ -209,6 +209,9 @@ class CustomCLIP(nn.Module):
         self.eps = 0.1
         self.max_iter = 100
 
+        self.maha_dist = nn.Parameter(torch.empty(1024, 1024))
+        nn.init.xavier_uniform_(self.maha_dist)
+
     def formulate_OT_cosine_distance(self, image_features, text_features):
         image_features = F.normalize(image_features, dim=2)
         text_features = F.normalize(text_features, dim=2)
@@ -245,7 +248,7 @@ class CustomCLIP(nn.Module):
         batch_size, num_sources = image_features.shape[0], image_features.shape[1]
         num_classes, num_targets = text_features.shape[0], text_features.shape[1]
 
-        reg = 0.01
+        reg = 0.1
         ot_distance = torch.zeros(batch_size, num_classes).to(self.device)
 
         for i in range(batch_size):
@@ -264,7 +267,7 @@ class CustomCLIP(nn.Module):
                                                               reg=reg,
                                                               reg_m=reg_kl,
                                                               M=inner_dist.float(),
-                                                              numItermax=10000,
+                                                              numItermax=1000,
                                                               method="sinkhorn_stabilized")
 
                 ot_distance[i, j] = torch.sum(inner_dist * T_opt)
@@ -355,7 +358,7 @@ class PLOT(TrainerX):
 
         print("Turning off gradients in both the image and the text encoder")
         for name, param in self.model.named_parameters():
-            if "prompt_learner" not in name and "text_feature_embed" not in name and "visual_feature_embed" not in name:
+            if "prompt_learner" not in name and "maha_dist" not in name:
                 # print(f"Not require grad: {name}")
                 param.requires_grad_(False)
             # else:
@@ -379,9 +382,16 @@ class PLOT(TrainerX):
         self.sched_prompt = build_lr_scheduler(self.optim_prompt, cfg.OPTIM)
         self.register_model("prompt_learner", self.model.prompt_learner, self.optim_prompt, self.sched_prompt)
 
+        # self.scaler = GradScaler() if cfg.TRAINER.PLOT.PREC == "amp" else None
+
+        self.optim_maha = build_optimizer(self.model.maha_dist, cfg.OPTIM)
+        self.sched_maha = build_lr_scheduler(self.optim_maha, cfg.OPTIM)
+        self.register_model("mahalanobis", self.model.maha_dist, self.optim_maha, self.sched_maha)
+
         self.scaler = GradScaler() if cfg.TRAINER.PLOT.PREC == "amp" else None
 
-        self.prototypes = dict()
+
+        # self.prototypes = dict()
 
     # def update_prototypes(self, image, label):
     #     pass
@@ -400,38 +410,6 @@ class PLOT(TrainerX):
             "loss": loss.item(),
             "acc": compute_accuracy(-output, label)[0].item(),
         }
-
-        # ot_distance = self.model(image)  # shape == [32, 102]
-        # batch_size = ot_distance.shape[0]
-        # num_classes = ot_distance.shape[1]
-        # reg = 0.01
-        # a = torch.ones(batch_size).to(self.device)
-        # b = torch.ones(num_classes).to(self.device)
-        # T_empirical = torch.zeros(batch_size, num_classes).to(self.device)
-        # for i in range(len(label)):
-        #     cls = int(label[i].item())
-        #     T_empirical[i, cls] += 1
-        #     # b[cls] += 1
-        # a = a / a.sum()
-        # b = b / b.sum()
-        # T_empirical = T_empirical / T_empirical.sum()
-        # ot_distance = ot_distance / ot_distance.max()
-        # reg_kl = (float("inf"), 0.01)
-        # T_opt = ot.unbalanced.sinkhorn_unbalanced(a=a.float(), b=b.float(), reg=reg, reg_m=reg_kl,
-        #                                           M=ot_distance.float(), numItermax=10000, method="sinkhorn_stabilized")
-        # print(T_opt.sum())
-        # # IOT
-        # loss = -T_empirical * torch.log(T_opt + 1e-8)
-        # loss = torch.sum(loss)
-        # self.model_backward_and_update(loss)
-        #
-        # pred = torch.argmax(-ot_distance, dim=1)
-        # print(f"Acc1: {torch.sum(pred == label) / len(pred)}")
-        # loss_summary = {
-        #     "loss": loss.item(),
-        #     "acc": compute_accuracy(T_opt, label)[0].item(),
-        # }
-
         if (self.batch_idx + 1) == self.num_batches:
             self.update_lr()
 
@@ -439,21 +417,6 @@ class PLOT(TrainerX):
 
     def model_inference(self, image, label):
         ot_distance = self.model(image)  # shape == [32, 102]
-
-        # batch_size = ot_distance.shape[0]
-        # num_classes = ot_distance.shape[1]
-        # reg = 0.01
-        # a = torch.ones(batch_size).to(self.device)
-        # b = torch.zeros(num_classes).to(self.device)
-        # for i in range(len(label)):
-        #     cls = int(label[i].item())
-        #     b[cls] += 1
-        # a = a / a.sum()
-        # b = b / b.sum()
-        # ot_distance = ot_distance / ot_distance.max()
-        #
-        # dist = ot.sinkhorn(a=a.float(), b=b.float(), M=ot_distance.float(), numItermax=10000, reg=reg, method="sinkhorn_stabilized")
-
         return -ot_distance
 
     def parse_batch_train(self, batch):
