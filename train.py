@@ -91,7 +91,7 @@ def extend_cfg(cfg):
     cfg.TRAINER.PLOT.CTX_INIT = ""  # initialization words
     cfg.TRAINER.PLOT.PREC = "fp16"  # fp16, fp32, amp
     cfg.TRAINER.PLOT.CLASS_TOKEN_POSITION = "end"  # 'middle' or 'end' or 'front'
-    cfg.TRAINER.PLOT.N = 4 # the number of prompts
+    cfg.TRAINER.PLOT.N = 16 # the number of prompts
 
     cfg.DATASET.SUBSAMPLE_CLASSES = "all"  # all, base or new
 

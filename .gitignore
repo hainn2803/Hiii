@@ -1,0 +1,27 @@
+# IDE and OS files
+.vscode/
+.idea/
+*.swp
+.DS_Store
+*__pycache__*
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Ignore large files that might be mistakenly added
+*.pth
+*.ckpt
+*.onnx
+*.pt
+*.bin
+
+# pretrained weights
+clip/pretrained_weights
+# dataset
+data
+# output
+output*
+result*
+
+# file out err
+sbatch*

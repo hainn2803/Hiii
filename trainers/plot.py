@@ -18,8 +18,9 @@ _tokenizer = _Tokenizer()
 
 def load_clip_to_cpu(cfg):
     backbone_name = cfg.MODEL.BACKBONE.NAME
-    url = clip._MODELS[backbone_name]
-    model_path = clip._download(url)
+    # url = clip._MODELS[backbone_name]
+    # model_path = clip._download(url)
+    model_path = f"clip/pretrained_weights/{backbone_name}.pt"
 
     try:
         # loading JIT archive
@@ -211,22 +212,6 @@ class CustomCLIP(nn.Module):
         self.eps = 0.1
         self.max_iter = 100
 
-    def Sinkhorn(self, K, u, v):
-        r = torch.ones_like(u)
-        c = torch.ones_like(v)
-        thresh = 1e-2
-        for i in range(self.max_iter):
-            r0 = r
-            r = u / torch.matmul(K, c.unsqueeze(-1)).squeeze(-1)
-            c = v / torch.matmul(K.permute(0, 2, 1).contiguous(), r.unsqueeze(-1)).squeeze(-1)
-            err = (r - r0).abs().mean()
-            if err.item() < thresh:
-                break
-
-        T = torch.matmul(r.unsqueeze(-1), c.unsqueeze(-2)) * K
-
-        return T
-
     def forward(self, image):
         
         b = image.shape[0]
@@ -249,37 +234,30 @@ class CustomCLIP(nn.Module):
             text_feature_pool = text_features.mean(dim=0)
 
         
-        image_features =  F.normalize(image_features, dim=2) 
+        image_features =  F.normalize(image_features, dim=2) # torch.Size([49, 32, 1024])
         image_feature_pool = F.normalize(image_feature_pool, dim=1)
-        text_features = F.normalize(text_features, dim=2)
+        text_features = F.normalize(text_features, dim=2) # torch.Size([4, 102, 1024])
         text_feature_pool = F.normalize(text_feature_pool, dim=1)
 
         sim = torch.einsum('mbd,ncd->mnbc', image_features, text_features).contiguous()  
         sim = sim.view(M,self.N,b*self.n_cls)
         sim = sim.permute(2,0,1)
         wdist = 1.0 - sim
-        xx=torch.zeros(b*self.n_cls, M, dtype=sim.dtype, device=sim.device).fill_(1. / M)
-        yy=torch.zeros(b*self.n_cls, self.N, dtype=sim.dtype, device=sim.device).fill_(1. / self.N)
+        p = torch.zeros(b*self.n_cls, M, dtype=sim.dtype, device=sim.device).fill_(1. / M)
+        q = torch.zeros(b*self.n_cls, self.N, dtype=sim.dtype, device=sim.device).fill_(1. / self.N)
 
-        
+        sinkhorn_solver = SinkhornAlgorithm(epsilon=self.eps, iterations=self.max_iter)
 
         with torch.no_grad():
-            KK = torch.exp(-wdist / self.eps)
-            T = self.Sinkhorn(KK,xx,yy)
-        if torch.isnan(T).any():
-            return None
+            T = sinkhorn_solver(p, q, wdist)
 
-
-        sim_op = torch.sum(T * wdist, dim=(1, 2))
-        sim_op = sim_op.contiguous().view(b,self.n_cls)
+        d_OT = torch.sum(T * wdist, dim=(1, 2))
+        d_OT = sim_op.contiguous().view(b, self.n_cls)
         
-
         logit_scale = self.logit_scale.exp()
-        logits = logit_scale * image_feature_pool @ text_feature_pool.t()
-        logits2 = logit_scale * sim_op
         if self.dataset == "ImageNet":
-            logits2 = (logits2 + logits)
-        return logits2
+            d_OT = d_OT + logit_scale * image_feature_pool @ text_feature_pool.t()
+        return -d_OT
 
 
 @TRAINER_REGISTRY.register()
@@ -332,10 +310,10 @@ class PLOT(TrainerX):
 
         # Note that multi-gpu training could be slow because CLIP's size is
         # big, which slows down the copy operation in DataParallel
-        # device_count = torch.cuda.device_count()
-        # if device_count > 1:
-        #     print(f"Multiple GPUs detected (n_gpus={device_count}), use all of them!")
-        #     self.model = nn.DataParallel(self.model)
+        device_count = torch.cuda.device_count()
+        if device_count > 1:
+            print(f"Multiple GPUs detected (n_gpus={device_count}), use all of them!")
+            self.model = nn.DataParallel(self.model)
 
     def forward_backward(self, batch):
         image, label = self.parse_batch_train(batch)
