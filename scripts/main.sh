@@ -16,14 +16,14 @@ N=$2  # number of proxy
 
 for SHOTS in 16
 do
-for SEED in 2
+for SEED in 1
 do
-DIR=result/plot-coop/output/OP_N${N}/${DATASET}/${TRAINER}/${CFG}_${SHOTS}shots/nctx${NCTX}_csc${CSC}_ctp${CTP}/seed${SEED}
+DIR=result_slice/plot-coop/output/OP_N${N}/${DATASET}/${TRAINER}/${CFG}_${SHOTS}shots/nctx${NCTX}_csc${CSC}_ctp${CTP}/seed${SEED}
 if [ -d "$DIR" ]; then
     echo "Results are available in ${DIR}. Skip this job"
 else
     echo "Run this job and save the output to ${DIR}"
-    CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python train.py \
+    CUDA_VISIBLE_DEVICES=0 python train.py \
     --root ${DATA} \
     --seed ${SEED} \
     --trainer ${TRAINER} \

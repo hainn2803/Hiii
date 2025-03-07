@@ -13,6 +13,8 @@ from dassl.optim import build_optimizer, build_lr_scheduler
 from clip import clip
 from clip.simple_tokenizer import SimpleTokenizer as _Tokenizer
 
+from ot import SinkhornAlgorithm, Sliced_Wasserstein_Distance
+
 _tokenizer = _Tokenizer()
 
 
@@ -47,14 +49,11 @@ class TextEncoder(nn.Module):
     def forward(self, prompts, tokenized_prompts):
 
         x = prompts + self.positional_embedding.type(self.dtype)
-        
         x = x.permute(1, 0, 2)  # NLD -> LND
         x = self.transformer(x)
         x = x.permute(1, 0, 2)  # LND -> NLD
         x = self.ln_final(x).type(self.dtype)
-        
         x = x[torch.arange(x.shape[0]), tokenized_prompts.argmax(dim=-1)] @ self.text_projection
-
         return x
 
 
@@ -204,13 +203,16 @@ class CustomCLIP(nn.Module):
         self.text_encoder = TextEncoder(clip_model)
         self.logit_scale = clip_model.logit_scale
         self.dtype = clip_model.dtype
-        self.device = torch.device("cuda:0")
+        self.device = torch.device("cuda")
         self.device1 = torch.device("cuda")
         self.N = cfg.TRAINER.PLOT.N
         self.dataset = cfg.DATASET.NAME
         self.use_uniform = True
         self.eps = 0.1
         self.max_iter = 100
+
+        # self.prompt_projection = nn.Parameter(torch.empty(self.N, 32, dtype=self.dtype))
+        # nn.init.normal_(self.prompt_projection, std=0.02)
 
     def forward(self, image):
         
@@ -229,32 +231,38 @@ class CustomCLIP(nn.Module):
             text_features =  text_features.contiguous().view(self.N, self.n_cls, self.d)  
             text_feature_pool = text_features.mean(dim=0)
         else:
-            text_features = self.text_encoder(prompts, tokenized_prompts) 
+            text_features = self.text_encoder(prompts, tokenized_prompts)
             text_features =  text_features.contiguous().view(self.N, self.n_cls, self.d)  
+            # text_features = text_features.permute(1, 2, 0) @ self.prompt_projection
+            # text_features = text_features.permute(2, 0, 1)
             text_feature_pool = text_features.mean(dim=0)
-
         
-        image_features =  F.normalize(image_features, dim=2) # torch.Size([49, 32, 1024])
+        # image_features =  F.normalize(image_features, dim=2) # torch.Size([49, 32, 1024])
         image_feature_pool = F.normalize(image_feature_pool, dim=1)
-        text_features = F.normalize(text_features, dim=2) # torch.Size([4, 102, 1024])
+        # text_features = F.normalize(text_features, dim=2) # torch.Size([4, 102, 1024])
         text_feature_pool = F.normalize(text_feature_pool, dim=1)
 
-        sim = torch.einsum('mbd,ncd->mnbc', image_features, text_features).contiguous()  
-        sim = sim.view(M,self.N,b*self.n_cls)
-        sim = sim.permute(2,0,1)
-        wdist = 1.0 - sim
-        p = torch.zeros(b*self.n_cls, M, dtype=sim.dtype, device=sim.device).fill_(1. / M)
-        q = torch.zeros(b*self.n_cls, self.N, dtype=sim.dtype, device=sim.device).fill_(1. / self.N)
+        image_features = image_features.permute(1, 0, 2) # torch.Size([32, 49, 1024])
+        text_features = text_features.permute(1, 0, 2) # torch.Size([102, 4, 1024])
 
-        sinkhorn_solver = SinkhornAlgorithm(epsilon=self.eps, iterations=self.max_iter)
+        # sim = torch.einsum('mbd,ncd->mnbc', image_features, text_features).contiguous() # shape == (32, 102, 49, 4)  
+        # sim = sim.view(-1, M, self.N)
+        # wdist = 1.0 - sim
 
-        with torch.no_grad():
-            T = sinkhorn_solver(p, q, wdist)
+        # p = torch.zeros(b*self.n_cls, M, dtype=sim.dtype, device=sim.device).fill_(1. / M)
+        # q = torch.zeros(b*self.n_cls, self.N, dtype=sim.dtype, device=sim.device).fill_(1. / self.N)
+        # sinkhorn_solver = SinkhornAlgorithm(epsilon=self.eps, iterations=self.max_iter)
+        # with torch.no_grad():
+        #     T = sinkhorn_solver(p, q, wdist)
 
-        d_OT = torch.sum(T * wdist, dim=(1, 2))
-        d_OT = sim_op.contiguous().view(b, self.n_cls)
+        # d_OT = torch.sum(T * wdist, dim=(1, 2))
+        # d_OT = d_OT.contiguous().view(b, self.n_cls)
+
+
+        d_OT = Sliced_Wasserstein_Distance(X=image_features, Y=text_features, num_projections=10000, device=self.device).cuda()
         
         logit_scale = self.logit_scale.exp()
+        d_OT = logit_scale * d_OT
         if self.dataset == "ImageNet":
             d_OT = d_OT + logit_scale * image_feature_pool @ text_feature_pool.t()
         return -d_OT
@@ -292,14 +300,16 @@ class PLOT(TrainerX):
             load_pretrained_weights(self.model.prompt_learner, cfg.MODEL.INIT_WEIGHTS)
 
         if cfg.DATASET.NAME== "ImageNet":
-            self.device =  torch.device("cuda:0")
+            self.device = torch.device("cuda:0")
             # device0 = torch.device("cuda:0")
             device1 = torch.device("cuda")
             self.model.to(self.device)
             self.model.text_encoder.to(device1)
-            self.model.text_encoder=nn.DataParallel(self.model.text_encoder)
+            self.model.text_encoder = nn.DataParallel(self.model.text_encoder)
         else:
             self.model.to(self.device)
+            # self.model.text_encoder.to(torch.device("cuda"))
+            # self.model.text_encoder = nn.DataParallel(self.model.text_encoder)
         
         # NOTE: only give prompt_learner to the optimizer
         self.optim = build_optimizer(self.model.prompt_learner, cfg.OPTIM)
@@ -328,7 +338,7 @@ class PLOT(TrainerX):
             self.scaler.step(self.optim)
             self.scaler.update()
         else:
-            output = -self.model(image)
+            output = self.model(image)
             loss = F.cross_entropy(output, label)
             self.model_backward_and_update(loss)
 
@@ -344,7 +354,7 @@ class PLOT(TrainerX):
 
     def model_inference(self, image):
         ot_distance = self.model(image)
-        return -1 * ot_distance
+        return ot_distance
 
     def parse_batch_train(self, batch):
         input = batch["img"]
